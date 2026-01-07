@@ -21,6 +21,7 @@ on:
 env:
   PRIVATE_REPO: git@github.com:KirCloud/KirClash.git
   SOURCE_DIR: source
+  IS_STABLE: ${{ !contains(github.ref, '-') }}
 
 jobs:
   build:
@@ -93,10 +94,19 @@ jobs:
           go-version: '1.24.0'
           cache-dependency-path: source/core/go.sum
 
-      # --- Setup Flutter ---
+      # --- Setup Flutter (Standard) ---
       - uses: subosito/flutter-action@v2
-        if: env.SHOULD_RUN == 'true'
+        if: env.SHOULD_RUN == 'true' && matrix.os != 'ubuntu-24.04-arm'
         with:
+          channel: stable
+          flutter-version: 3.35.7
+          cache: true
+
+      # --- Setup Flutter (Linux ARM64 / Master) ---
+      - uses: subosito/flutter-action@v2
+        if: env.SHOULD_RUN == 'true' && matrix.os == 'ubuntu-24.04-arm'
+        with:
+          channel: master
           flutter-version: 3.35.7
           cache: true
 
@@ -107,7 +117,7 @@ jobs:
         run: |
           cd $SOURCE_DIR
           flutter pub get
-          dart setup.dart ${{ matrix.platform }} ${{ matrix.arch && format('--arch {0}', matrix.arch) || '' }}
+          dart setup.dart ${{ matrix.platform }} ${{ matrix.arch && format('--arch {0}', matrix.arch) || '' }} ${{ env.IS_STABLE == 'true' && '--env stable' || '' }}
 
       # --- Post-Build (Copy Release Template) ---
       - name: Copy Release Template (Linux Only)
