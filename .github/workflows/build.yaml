@@ -37,8 +37,6 @@ jobs:
 
       # --- Android Signing ---
       - name: Setup Android Signing
-      # --- Android Signing ---
-      - name: Setup Android Signing
         run: |
           cd $SOURCE_DIR
           echo "${{ secrets.KEYSTORE }}" | base64 --decode > android/app/keystore.jks
