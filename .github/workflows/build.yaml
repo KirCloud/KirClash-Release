@@ -27,7 +27,7 @@ jobs:
           ssh-keyscan github.com >> ~/.ssh/known_hosts
 
       - name: Clone source
-        run: git clone $PRIVATE_REPO $SOURCE_DIR
+        run: git clone --recursive $PRIVATE_REPO $SOURCE_DIR
 
       # --- 版本号 ---
       - name: Extract version
@@ -37,7 +37,10 @@ jobs:
 
       # --- Android Signing ---
       - name: Setup Android Signing
+      # --- Android Signing ---
+      - name: Setup Android Signing
         run: |
+          cd $SOURCE_DIR
           echo "${{ secrets.KEYSTORE }}" | base64 --decode > android/app/keystore.jks
           echo "${{ secrets.SERVICE_JSON }}" | base64 --decode > android/app/google-services.json
           echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/local.properties
@@ -48,7 +51,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24.0'
-          cache-dependency-path: core/go.sum
+          cache-dependency-path: source/core/go.sum
 
       # --- Flutter ---
       - uses: subosito/flutter-action@v2
@@ -90,7 +93,7 @@ jobs:
 
       - name: Clone source
         shell: bash
-        run: git clone $PRIVATE_REPO $SOURCE_DIR
+        run: git clone --recursive $PRIVATE_REPO $SOURCE_DIR
 
       - name: Extract version
         shell: bash
@@ -101,7 +104,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24.0'
-          cache-dependency-path: core/go.sum
+          cache-dependency-path: source/core/go.sum
 
       - uses: subosito/flutter-action@v2
         with:
@@ -144,7 +147,7 @@ jobs:
           ssh-keyscan github.com >> ~/.ssh/known_hosts
 
       - name: Clone source
-        run: git clone $PRIVATE_REPO $SOURCE_DIR
+        run: git clone --recursive $PRIVATE_REPO $SOURCE_DIR
 
       - name: Extract version
         run: |
@@ -154,7 +157,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24.0'
-          cache-dependency-path: core/go.sum
+          cache-dependency-path: source/core/go.sum
 
       - uses: subosito/flutter-action@v2
         with:
@@ -193,16 +196,21 @@ jobs:
           ssh-keyscan github.com >> ~/.ssh/known_hosts
 
       - name: Clone source
-        run: git clone $PRIVATE_REPO $SOURCE_DIR
+        run: git clone --recursive $PRIVATE_REPO $SOURCE_DIR
 
       - name: Extract version
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.0'
+          cache-dependency-path: source/core/go.sum
+
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: stable
+          flutter-version: 3.35.7
           cache: true
 
       - name: Install Linux dependencies
@@ -214,6 +222,7 @@ jobs:
         run: |
           cd $SOURCE_DIR
           flutter pub get
+          dart setup.dart linux
           flutter build linux --release
 
           mkdir -p dist
