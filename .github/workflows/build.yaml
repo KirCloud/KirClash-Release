@@ -1,0 +1,260 @@
+name: Release Build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+env:
+  PRIVATE_REPO: git@github.com:KirCloud/KirClash.git
+  SOURCE_DIR: source
+
+jobs:
+  # =====================================================
+  # 1️⃣ Android
+  # =====================================================
+  android:
+    runs-on: ubuntu-latest
+
+    steps:
+      # --- SSH 拉私有仓库 ---
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PRIVATE_REPO_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+      - name: Clone source
+        run: git clone $PRIVATE_REPO $SOURCE_DIR
+
+      # --- 版本号 ---
+      - name: Extract version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      # --- Android Signing ---
+      - name: Setup Android Signing
+        run: |
+          echo "${{ secrets.KEYSTORE }}" | base64 --decode > android/app/keystore.jks
+          echo "${{ secrets.SERVICE_JSON }}" | base64 --decode > android/app/google-services.json
+          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/local.properties
+          echo "storePassword=${{ secrets.STORE_PASSWORD }}" >> android/local.properties
+          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> android/local.properties
+
+      # --- Go ---
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.0'
+          cache-dependency-path: core/go.sum
+
+      # --- Flutter ---
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.35.7
+          cache: true
+
+      - name: Build Android APKs
+        run: |
+          cd $SOURCE_DIR
+          flutter pub get
+          dart setup.dart android
+          flutter build apk --release --split-per-abi
+
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/*arm64-v8a*.apk dist/KirCloud-${VERSION}-android-arm64-v8a.apk
+          cp build/app/outputs/flutter-apk/*armeabi-v7a*.apk dist/KirCloud-${VERSION}-android-armeabi-v7a.apk
+          cp build/app/outputs/flutter-apk/*x86_64*.apk dist/KirCloud-${VERSION}-android-x86_64.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: source/dist/*
+
+  # =====================================================
+  # 2️⃣ Windows
+  # =====================================================
+  windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Setup SSH
+        shell: bash
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PRIVATE_REPO_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+      - name: Clone source
+        shell: bash
+        run: git clone $PRIVATE_REPO $SOURCE_DIR
+
+      - name: Extract version
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.0'
+          cache-dependency-path: core/go.sum
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.35.7
+          cache: true
+
+      - name: Build Windows
+        shell: bash
+        run: |
+          cd $SOURCE_DIR
+          flutter pub get
+          dart setup.dart windows
+          flutter build windows --release
+
+          mkdir -p dist
+          cd build/windows/x64/runner/Release
+          zip -r ../../../../../dist/KirCloud-${VERSION}-windows-amd64.zip *
+
+      # ⚠️ setup.exe 通常用 Inno Setup / NSIS，这里预留
+      # - name: Build Windows Installer
+      #   run: ...
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: source/dist/*
+
+  # =====================================================
+  # 3️⃣ macOS（Intel + Apple Silicon）
+  # =====================================================
+  macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PRIVATE_REPO_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+      - name: Clone source
+        run: git clone $PRIVATE_REPO $SOURCE_DIR
+
+      - name: Extract version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.0'
+          cache-dependency-path: core/go.sum
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.35.7
+          cache: true
+
+      - name: Build macOS
+        run: |
+          cd $SOURCE_DIR
+          flutter pub get
+          dart setup.dart macos
+          flutter build macos --release
+
+          mkdir -p dist
+          hdiutil create \
+            dist/KirCloud-${VERSION}-macos-amd64.dmg \
+            -srcfolder build/macos/Build/Products/Release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: source/dist/*
+
+  # =====================================================
+  # 4️⃣ Linux
+  # =====================================================
+  linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PRIVATE_REPO_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+      - name: Clone source
+        run: git clone $PRIVATE_REPO $SOURCE_DIR
+
+      - name: Extract version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: stable
+          cache: true
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+
+      - name: Build Linux
+        run: |
+          cd $SOURCE_DIR
+          flutter pub get
+          flutter build linux --release
+
+          mkdir -p dist
+          cp -r build/linux/x64/release/bundle dist/app
+
+          # AppImage（示例）
+          echo "TODO: appimagetool" > dist/KirCloud-${VERSION}-linux-amd64.AppImage
+
+          # deb / rpm 通常用 fpm，这里预留
+          echo "TODO: deb package" > dist/KirCloud-${VERSION}-linux-amd64.deb
+          
+          # Copy release template to artifacts
+          cp .github/release_template.md dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: source/dist/*
+
+  # =====================================================
+  # 5️⃣ 汇总 + 发布 Release
+  # =====================================================
+  release:
+    needs: [android, windows, macos, linux]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Prepare release notes
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed "s/VERSION/${VERSION}/g" dist/release_template.md > release_notes.md
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          body_path: release_notes.md
+          files: dist/**/*
