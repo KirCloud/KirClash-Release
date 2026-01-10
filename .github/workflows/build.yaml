@@ -14,6 +14,15 @@ on:
           - windows
           - linux
           - macos
+      config_url:
+        description: 'Config URL'
+        required: false
+      config_key:
+        description: 'Config Key'
+        required: false
+      config_sources_json:
+        description: 'Config Sources (JSON list)'
+        required: false
   push:
     tags:
       - "v*"
@@ -114,9 +123,14 @@ jobs:
       - name: Build Application
         if: env.SHOULD_RUN == 'true'
         shell: bash
+        env:
+          CONFIG_URL: ${{ github.event.inputs.config_url }}
+          CONFIG_KEY: ${{ github.event.inputs.config_key }}
+          CONFIG_SOURCES_JSON: ${{ github.event.inputs.config_sources_json }}
         run: |
           cd $SOURCE_DIR
           flutter pub get
+          dart tool/embed_config.dart
           dart setup.dart ${{ matrix.platform }} ${{ matrix.arch && format('--arch {0}', matrix.arch) || '' }} ${{ env.IS_STABLE == 'true' && '--env stable' || '' }}
 
       # --- Post-Build (Copy Release Template) ---
