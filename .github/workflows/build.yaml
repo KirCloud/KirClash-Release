@@ -211,7 +211,7 @@ jobs:
             
             echo "Running generate_icons.sh..."
             chmod +x generate_icons.sh
-            pip3 install Pillow
+            pip3 install --break-system-packages Pillow || pip3 install Pillow
             ./generate_icons.sh
           fi
           
