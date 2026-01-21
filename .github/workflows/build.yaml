@@ -195,7 +195,11 @@ jobs:
         run: |
           cd $SOURCE_DIR
           flutter pub get
-          dart tool/rebrand.dart
+          
+          # Only run rebrand if the script exists (whitelabel branch only)
+          if [ -f "tool/rebrand.dart" ]; then
+            dart tool/rebrand.dart
+          fi
           
           # Download and replace icon if URL provided
           if [ -n "$ICON_URL" ]; then
