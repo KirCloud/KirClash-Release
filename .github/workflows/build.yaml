@@ -37,6 +37,9 @@ on:
         options:
           - main
           - whitelabel
+      icon_url:
+        description: 'Custom app icon URL (PNG, 1024x1024 recommended)'
+        required: false
   push:
     tags:
       - "v*"
@@ -188,10 +191,30 @@ jobs:
           CONFIG_SOURCES_JSON: ${{ github.event.inputs.config_sources_json }}
           REBRAND_APP_NAME: ${{ github.event.inputs.app_name }}
           REBRAND_ORG_ID: ${{ github.event.inputs.org_id }}
+          ICON_URL: ${{ github.event.inputs.icon_url }}
         run: |
           cd $SOURCE_DIR
           flutter pub get
           dart tool/rebrand.dart
+          
+          # Download and replace icon if URL provided
+          if [ -n "$ICON_URL" ]; then
+            echo "Downloading custom icon from: $ICON_URL"
+            curl -L -o /tmp/custom_icon.png "$ICON_URL"
+            
+            # Replace all source icons
+            cp /tmp/custom_icon.png assets/images/icon.png
+            cp /tmp/custom_icon.png assets/images/macicon/icon-macOS-Default-1024x1024@1x.png 2>/dev/null || true
+            cp /tmp/custom_icon.png assets/images/icon/status_1.png 2>/dev/null || true
+            cp /tmp/custom_icon.png assets/images/icon/status_2.png 2>/dev/null || true
+            cp /tmp/custom_icon.png assets/images/icon/status_3.png 2>/dev/null || true
+            
+            echo "Running generate_icons.sh..."
+            chmod +x generate_icons.sh
+            pip3 install Pillow
+            ./generate_icons.sh
+          fi
+          
           dart tool/embed_config.dart
           dart setup.dart ${{ matrix.platform }} ${{ matrix.arch && format('--arch {0}', matrix.arch) || '' }} ${{ env.IS_STABLE == 'true' && '--env stable' || '' }}
 
