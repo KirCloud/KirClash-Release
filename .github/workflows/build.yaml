@@ -24,7 +24,10 @@ on:
         description: 'Config Sources (JSON list)'
         required: false
       app_name:
-        description: 'App Display Name (default: KirSSR)'
+        description: 'App Display Name for UI (can be Chinese, default: KirSSR)'
+        required: false
+      binary_name:
+        description: 'Executable/binary name (ASCII only, for CMake, default: KirSSR)'
         required: false
       org_id:
         description: 'Organization ID for package (default: kircloud)'
@@ -190,6 +193,7 @@ jobs:
           CONFIG_KEY: ${{ github.event.inputs.config_key }}
           CONFIG_SOURCES_JSON: ${{ github.event.inputs.config_sources_json }}
           REBRAND_APP_NAME: ${{ github.event.inputs.app_name }}
+          REBRAND_BINARY_NAME: ${{ github.event.inputs.binary_name }}
           REBRAND_ORG_ID: ${{ github.event.inputs.org_id }}
           ICON_URL: ${{ github.event.inputs.icon_url }}
         run: |
