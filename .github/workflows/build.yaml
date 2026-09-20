@@ -173,7 +173,7 @@ jobs:
         if: env.SHOULD_RUN == 'true' && matrix.os != 'ubuntu-24.04-arm'
         with:
           channel: stable
-          flutter-version: 3.35.7
+          flutter-version: 3.47.5
           cache: true
 
       # --- Setup Flutter (Linux ARM64 / Master) ---
@@ -181,7 +181,7 @@ jobs:
         if: env.SHOULD_RUN == 'true' && matrix.os == 'ubuntu-24.04-arm'
         with:
           channel: master
-          flutter-version: 3.35.7
+          flutter-version: 3.47.5
           cache: true
 
       # --- Build Dependencies & Application ---
