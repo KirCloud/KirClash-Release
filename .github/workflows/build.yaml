@@ -108,6 +108,17 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
+      # --- Patch flutter_distributor ---
+      # Flutter >= 3.41 rejects the framework-reserved FLUTTER_BUILD_NAME /
+      # FLUTTER_BUILD_NUMBER dart-defines that the pinned distributor still
+      # passes; switch it to the supported --build-name / --build-number flags.
+      - name: Patch flutter_distributor build flags
+        if: env.SHOULD_RUN == 'true'
+        shell: bash
+        run: |
+          cd $SOURCE_DIR/plugins/flutter_distributor
+          git apply "$GITHUB_WORKSPACE/.github/patches/flutter_distributor_build_flags.patch"
+
       # --- Android Signing (Only for Android) ---
       - name: Setup Android Signing
         if: env.SHOULD_RUN == 'true' && matrix.platform == 'android'
