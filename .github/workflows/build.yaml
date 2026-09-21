@@ -117,7 +117,7 @@ jobs:
         shell: bash
         run: |
           cd $SOURCE_DIR/plugins/flutter_distributor
-          git apply "$SOURCE_DIR/.github/patches/flutter_distributor_build_flags.patch"
+          git apply "$GITHUB_WORKSPACE/$SOURCE_DIR/.github/patches/flutter_distributor_build_flags.patch"
 
       # --- Android Signing (Only for Android) ---
       - name: Setup Android Signing
