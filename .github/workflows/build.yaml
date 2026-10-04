@@ -3,17 +3,22 @@ name: Release Build
 on:
   workflow_dispatch:
     inputs:
-      platform:
-        description: 'Platform'
-        required: true
-        default: 'all'
-        type: choice
-        options:
-          - all
-          - android
-          - windows
-          - linux
-          - macos
+      android:
+        description: 'Build Android'
+        type: boolean
+        default: true
+      windows:
+        description: 'Build Windows'
+        type: boolean
+        default: true
+      linux:
+        description: 'Build Linux'
+        type: boolean
+        default: true
+      macos:
+        description: 'Build macOS'
+        type: boolean
+        default: true
       config_url:
         description: 'Config URL'
         required: false
@@ -57,7 +62,7 @@ jobs:
     name: Build ${{ matrix.platform }} ${{ matrix.arch }}
     runs-on: ${{ matrix.os }}
     env:
-      SHOULD_RUN: ${{ github.event_name == 'push' || github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+      SHOULD_RUN: ${{ github.event_name == 'push' || inputs[matrix.platform] == true }}
     strategy:
       fail-fast: false
       matrix:
