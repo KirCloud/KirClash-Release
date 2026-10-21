@@ -277,3 +277,63 @@ jobs:
           tag_name: ${{ github.ref_name }}
           body_path: release_notes.md
           files: dist/**/*
+
+  feijipan:
+    name: Mirror to Feijipan
+    needs: release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref, '-')
+    concurrency: feijipan-upload
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: actions/checkout@v5
+        with:
+          repository: KirCloud/feijipan-desktop-api
+          ssh-key: ${{ secrets.FEIJIPAN_API_SSH_KEY }}
+          path: feijipan
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install uploader
+        working-directory: feijipan
+        run: npm ci
+
+      - name: Upload installers
+        id: upload
+        env:
+          FEIJI_LOGIN: ${{ secrets.FEIJI_LOGIN }}
+          FEIJI_PASSWORD: ${{ secrets.FEIJI_PASSWORD }}
+        run: |
+          mapfile -t files < <(find dist -type f \( \
+            -name '*-android-arm64-v8a.apk' -o \
+            -name '*-windows-amd64-setup.exe' -o \
+            -name '*-macos-*.dmg' -o \
+            -name '*-linux-amd64.AppImage' -o \
+            -name '*-linux-amd64.deb' -o \
+            -name '*-linux-amd64.rpm' \) | sort)
+          if [ "${#files[@]}" -ne 7 ]; then
+            echo "expected 7 installers, found ${#files[@]}: ${files[*]}"
+            exit 1
+          fi
+          node feijipan/publish.mjs --folder 客户端 "${files[@]}" > uploaded.json
+
+      # The download site reads this manifest to build mainland-China direct links.
+      - name: Attach Feijipan manifest
+        if: ${{ !cancelled() && steps.upload.outcome != 'skipped' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ -s uploaded.json ] || { echo "no upload result"; exit 1; }
+          published_at=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json publishedAt -q .publishedAt)
+          jq --arg tag "$GITHUB_REF_NAME" --arg publishedAt "$published_at" \
+            '{tag: $tag, publishedAt: $publishedAt, files: .files}' uploaded.json > feijipan.json
+          gh release upload "$GITHUB_REF_NAME" feijipan.json --repo "$GITHUB_REPOSITORY" --clobber
