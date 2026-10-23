@@ -282,7 +282,7 @@ jobs:
     name: Mirror to Feijipan
     needs: release
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && !contains(github.ref, '-')
+    if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref, '-')
     concurrency: feijipan-upload
     permissions:
       contents: write
