@@ -75,12 +75,14 @@ jobs:
           - platform: windows
             os: windows-11-arm
             arch: arm64
+            flutter-channel: master
           - platform: linux
             os: ubuntu-22.04
             arch: amd64
           - platform: linux
             os: ubuntu-24.04-arm
             arch: arm64
+            flutter-channel: master
           - platform: macos
             os: macos-26-intel
             arch: amd64
@@ -89,6 +91,15 @@ jobs:
             arch: arm64
 
     steps:
+      - name: Setup rust
+        if: env.SHOULD_RUN == 'true' && startsWith(matrix.os, 'windows-11-arm')
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://win.rustup.rs/aarch64" -OutFile rustup-init.exe
+          .\rustup-init.exe -y --default-toolchain stable
+          $cargoPath = "$env:USERPROFILE\.cargo\bin"
+          Add-Content $env:GITHUB_PATH $cargoPath
+
       # --- SSH Setup ---
       - name: Setup SSH
         if: env.SHOULD_RUN == 'true'
@@ -176,54 +187,16 @@ jobs:
           go-version: '1.24.0'
           cache-dependency-path: source/core/go.sum
 
-      # --- Setup Flutter (Standard) ---
+      # --- Setup Flutter ---
       - uses: subosito/flutter-action@v2
-        if: env.SHOULD_RUN == 'true' && matrix.os != 'ubuntu-24.04-arm'
+        if: env.SHOULD_RUN == 'true'
         with:
-          channel: stable
-          flutter-version: 3.47.5
-          architecture: ${{ matrix.platform == 'windows' && 'x64' || runner.arch }}
-          cache: true
-          cache-key: "flutter-:os:-:channel:-:version:-:arch:-${{ matrix.arch || 'universal' }}-:hash:"
-          pub-cache-key: "flutter-pub-:os:-:channel:-:version:-:arch:-${{ matrix.arch || 'universal' }}-:hash:"
-
-      - name: Prepare native Windows ARM64 toolchain
-        if: env.SHOULD_RUN == 'true' && matrix.platform == 'windows' && matrix.arch == 'arm64'
-        shell: pwsh
-        run: |
-          if ([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64') {
-            throw 'Windows ARM64 builds require native ARM64 PowerShell.'
-          }
-          $cache = Join-Path $env:FLUTTER_ROOT 'bin/cache'
-          $dart = Join-Path $cache 'dart-sdk/bin/dart.exe'
-          $dartVersion = (& $dart --version 2>&1 | Out-String)
-          # Flutter's Windows archive bundles x64 Dart, which controls the build architecture.
-          if ($dartVersion -notmatch 'windows_arm64') {
-            foreach ($stamp in @('engine-dart-sdk.stamp', 'flutter_tools.stamp', 'flutter_tools.snapshot')) {
-              Remove-Item (Join-Path $cache $stamp) -Force -ErrorAction SilentlyContinue
-            }
-            & (Join-Path $env:FLUTTER_ROOT 'bin/internal/update_dart_sdk.ps1')
-            flutter precache --windows --force
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
-          $dartVersion = (& $dart --version 2>&1 | Out-String)
-          Write-Host $dartVersion
-          if ($LASTEXITCODE -ne 0 -or $dartVersion -notmatch 'windows_arm64') {
-            throw 'Flutter did not install the native Windows ARM64 Dart SDK.'
-          }
-          rustup target add aarch64-pc-windows-msvc
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      # --- Setup Flutter (Linux ARM64 / Master) ---
-      - uses: subosito/flutter-action@v2
-        if: env.SHOULD_RUN == 'true' && matrix.os == 'ubuntu-24.04-arm'
-        with:
-          channel: master
+          channel: ${{ matrix.flutter-channel || 'stable' }}
           flutter-version: 3.47.5
           cache: true
 
       # --- Build Dependencies & Application ---
-      - name: Build Application
+      - name: Prepare Application
         if: env.SHOULD_RUN == 'true'
         shell: bash
         env:
@@ -262,45 +235,11 @@ jobs:
           fi
           
           dart tool/embed_config.dart
-          if [ '${{ matrix.platform }}-${{ matrix.arch }}' != 'windows-arm64' ]; then
-            dart setup.dart ${{ matrix.platform }} ${{ matrix.arch && format('--arch {0}', matrix.arch) || '' }} ${{ env.IS_STABLE == 'true' && '--env stable' || '' }}
-          fi
 
-      - name: Build and verify Windows ARM64 packages
-        if: env.SHOULD_RUN == 'true' && matrix.platform == 'windows' && matrix.arch == 'arm64'
-        shell: pwsh
+      - name: Setup
+        if: env.SHOULD_RUN == 'true'
         working-directory: source
-        run: |
-          dart setup.dart windows --arch arm64 ${{ env.IS_STABLE == 'true' && '--env stable' || '' }}
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          Add-Type -AssemblyName System.Reflection.Metadata
-          # Managed AnyCPU assemblies such as EnableLoopback.exe keep an x86 COFF header but run natively.
-          function Test-Arm64Binary([string] $binaryPath) {
-            $reader = [System.Reflection.PortableExecutable.PEReader]::new([System.IO.File]::OpenRead($binaryPath))
-            try {
-              $headers = $reader.PEHeaders
-              if ($headers.CoffHeader.Machine -eq [System.Reflection.PortableExecutable.Machine]::Arm64) { return $true }
-              $corFlags = $headers.CorHeader.Flags
-              return $null -ne $headers.CorHeader -and
-                $corFlags.HasFlag([System.Reflection.PortableExecutable.CorFlags]::ILOnly) -and
-                -not $corFlags.HasFlag([System.Reflection.PortableExecutable.CorFlags]::Requires32Bit)
-            } finally {
-              $reader.Dispose()
-            }
-          }
-          $releasePath = 'build/windows/arm64/runner/Release'
-          $binaries = @(Get-ChildItem $releasePath -Recurse -File | Where-Object { $_.Extension -in @('.exe', '.dll') })
-          if ($binaries.Count -eq 0) { throw 'No Windows ARM64 binaries were built.' }
-          $foreign = @($binaries | Where-Object { -not (Test-Arm64Binary $_.FullName) })
-          if ($foreign.Count -ne 0) {
-            throw "Non-ARM64 binaries in the Windows ARM64 bundle:`n$($foreign.FullName -join "`n")"
-          }
-          foreach ($pattern in @('*-windows-arm64-setup.exe', '*-windows-arm64.zip')) {
-            if (@(Get-ChildItem 'dist' -Filter $pattern -File).Count -ne 1) {
-              throw "Expected one Windows ARM64 package matching $pattern"
-            }
-          }
+        run: dart setup.dart ${{ matrix.platform }} ${{ env.IS_STABLE == 'true' && '--env stable' || '' }}
 
       # --- Post-Build (Copy Release Template) ---
       - name: Copy Release Template (Linux Only)
