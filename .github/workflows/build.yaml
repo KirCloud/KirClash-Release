@@ -72,6 +72,9 @@ jobs:
           - platform: windows
             os: windows-latest
             arch: amd64
+          - platform: windows
+            os: windows-11-arm
+            arch: arm64
           - platform: linux
             os: ubuntu-22.04
             arch: amd64
@@ -179,7 +182,37 @@ jobs:
         with:
           channel: stable
           flutter-version: 3.47.5
+          architecture: ${{ matrix.platform == 'windows' && 'x64' || runner.arch }}
           cache: true
+          cache-key: "flutter-:os:-:channel:-:version:-:arch:-${{ matrix.arch || 'universal' }}-:hash:"
+          pub-cache-key: "flutter-pub-:os:-:channel:-:version:-:arch:-${{ matrix.arch || 'universal' }}-:hash:"
+
+      - name: Prepare native Windows ARM64 toolchain
+        if: env.SHOULD_RUN == 'true' && matrix.platform == 'windows' && matrix.arch == 'arm64'
+        shell: pwsh
+        run: |
+          if ([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64') {
+            throw 'Windows ARM64 builds require native ARM64 PowerShell.'
+          }
+          $cache = Join-Path $env:FLUTTER_ROOT 'bin/cache'
+          $dart = Join-Path $cache 'dart-sdk/bin/dart.exe'
+          $dartVersion = (& $dart --version 2>&1 | Out-String)
+          # Flutter's Windows archive bundles x64 Dart, which controls the build architecture.
+          if ($dartVersion -notmatch 'windows_arm64') {
+            foreach ($stamp in @('engine-dart-sdk.stamp', 'flutter_tools.stamp', 'flutter_tools.snapshot')) {
+              Remove-Item (Join-Path $cache $stamp) -Force -ErrorAction SilentlyContinue
+            }
+            & (Join-Path $env:FLUTTER_ROOT 'bin/internal/update_dart_sdk.ps1')
+            flutter precache --windows --force
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          $dartVersion = (& $dart --version 2>&1 | Out-String)
+          Write-Host $dartVersion
+          if ($LASTEXITCODE -ne 0 -or $dartVersion -notmatch 'windows_arm64') {
+            throw 'Flutter did not install the native Windows ARM64 Dart SDK.'
+          }
+          rustup target add aarch64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # --- Setup Flutter (Linux ARM64 / Master) ---
       - uses: subosito/flutter-action@v2
@@ -229,7 +262,45 @@ jobs:
           fi
           
           dart tool/embed_config.dart
-          dart setup.dart ${{ matrix.platform }} ${{ matrix.arch && format('--arch {0}', matrix.arch) || '' }} ${{ env.IS_STABLE == 'true' && '--env stable' || '' }}
+          if [ '${{ matrix.platform }}-${{ matrix.arch }}' != 'windows-arm64' ]; then
+            dart setup.dart ${{ matrix.platform }} ${{ matrix.arch && format('--arch {0}', matrix.arch) || '' }} ${{ env.IS_STABLE == 'true' && '--env stable' || '' }}
+          fi
+
+      - name: Build and verify Windows ARM64 packages
+        if: env.SHOULD_RUN == 'true' && matrix.platform == 'windows' && matrix.arch == 'arm64'
+        shell: pwsh
+        working-directory: source
+        run: |
+          dart setup.dart windows --arch arm64 ${{ env.IS_STABLE == 'true' && '--env stable' || '' }}
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          function Get-PeMachine([string] $binaryPath) {
+            $stream = [System.IO.File]::OpenRead($binaryPath)
+            try {
+              $reader = [System.IO.BinaryReader]::new($stream)
+              $stream.Position = 0x3C
+              $peOffset = $reader.ReadUInt32()
+              $stream.Position = $peOffset
+              if ($reader.ReadUInt32() -ne 0x4550) { throw "Invalid PE header: $binaryPath" }
+              return $reader.ReadUInt16()
+            } finally {
+              $stream.Dispose()
+            }
+          }
+          $releasePath = 'build/windows/arm64/runner/Release'
+          $binaries = @(Get-ChildItem $releasePath -Recurse -File | Where-Object { $_.Extension -in @('.exe', '.dll') })
+          if ($binaries.Count -eq 0) { throw 'No Windows ARM64 binaries were built.' }
+          foreach ($binary in $binaries) {
+            $machine = Get-PeMachine $binary.FullName
+            if ($machine -ne 0xAA64) {
+              throw ('Unexpected PE architecture 0x{0:X4}: {1}' -f $machine, $binary.FullName)
+            }
+          }
+          foreach ($pattern in @('*-windows-arm64-setup.exe', '*-windows-arm64.zip')) {
+            if (@(Get-ChildItem 'dist' -Filter $pattern -File).Count -ne 1) {
+              throw "Expected one Windows ARM64 package matching $pattern"
+            }
+          }
 
       # --- Post-Build (Copy Release Template) ---
       - name: Copy Release Template (Linux Only)
@@ -316,12 +387,13 @@ jobs:
           mapfile -t files < <(find dist -type f \( \
             -name '*-android-arm64-v8a.apk' -o \
             -name '*-windows-amd64-setup.exe' -o \
+            -name '*-windows-arm64-setup.exe' -o \
             -name '*-macos-*.dmg' -o \
             -name '*-linux-amd64.AppImage' -o \
             -name '*-linux-amd64.deb' -o \
             -name '*-linux-amd64.rpm' \) | sort)
-          if [ "${#files[@]}" -ne 7 ]; then
-            echo "expected 7 installers, found ${#files[@]}: ${files[*]}"
+          if [ "${#files[@]}" -ne 8 ]; then
+            echo "expected 8 installers, found ${#files[@]}: ${files[*]}"
             exit 1
           fi
           node feijipan/publish.mjs --folder 客户端 "${files[@]}" > uploaded.json
