@@ -274,27 +274,27 @@ jobs:
           dart setup.dart windows --arch arm64 ${{ env.IS_STABLE == 'true' && '--env stable' || '' }}
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          function Get-PeMachine([string] $binaryPath) {
-            $stream = [System.IO.File]::OpenRead($binaryPath)
+          Add-Type -AssemblyName System.Reflection.Metadata
+          # Managed AnyCPU assemblies such as EnableLoopback.exe keep an x86 COFF header but run natively.
+          function Test-Arm64Binary([string] $binaryPath) {
+            $reader = [System.Reflection.PortableExecutable.PEReader]::new([System.IO.File]::OpenRead($binaryPath))
             try {
-              $reader = [System.IO.BinaryReader]::new($stream)
-              $stream.Position = 0x3C
-              $peOffset = $reader.ReadUInt32()
-              $stream.Position = $peOffset
-              if ($reader.ReadUInt32() -ne 0x4550) { throw "Invalid PE header: $binaryPath" }
-              return $reader.ReadUInt16()
+              $headers = $reader.PEHeaders
+              if ($headers.CoffHeader.Machine -eq [System.Reflection.PortableExecutable.Machine]::Arm64) { return $true }
+              $corFlags = $headers.CorHeader.Flags
+              return $null -ne $headers.CorHeader -and
+                $corFlags.HasFlag([System.Reflection.PortableExecutable.CorFlags]::ILOnly) -and
+                -not $corFlags.HasFlag([System.Reflection.PortableExecutable.CorFlags]::Requires32Bit)
             } finally {
-              $stream.Dispose()
+              $reader.Dispose()
             }
           }
           $releasePath = 'build/windows/arm64/runner/Release'
           $binaries = @(Get-ChildItem $releasePath -Recurse -File | Where-Object { $_.Extension -in @('.exe', '.dll') })
           if ($binaries.Count -eq 0) { throw 'No Windows ARM64 binaries were built.' }
-          foreach ($binary in $binaries) {
-            $machine = Get-PeMachine $binary.FullName
-            if ($machine -ne 0xAA64) {
-              throw ('Unexpected PE architecture 0x{0:X4}: {1}' -f $machine, $binary.FullName)
-            }
+          $foreign = @($binaries | Where-Object { -not (Test-Arm64Binary $_.FullName) })
+          if ($foreign.Count -ne 0) {
+            throw "Non-ARM64 binaries in the Windows ARM64 bundle:`n$($foreign.FullName -join "`n")"
           }
           foreach ($pattern in @('*-windows-arm64-setup.exe', '*-windows-arm64.zip')) {
             if (@(Get-ChildItem 'dist' -Filter $pattern -File).Count -ne 1) {
