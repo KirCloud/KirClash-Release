@@ -38,13 +38,10 @@ on:
         description: 'Organization ID for package (default: kircloud)'
         required: false
       branch:
-        description: 'Source branch to build'
+        description: 'Source branch or tag to build (e.g. main, whitelabel, claude/xxx)'
         required: false
         default: 'main'
-        type: choice
-        options:
-          - main
-          - whitelabel
+        type: string
       icon_url:
         description: 'Custom app icon URL (PNG, 1024x1024 recommended)'
         required: false
@@ -114,10 +111,15 @@ jobs:
       - name: Clone source
         if: env.SHOULD_RUN == 'true'
         shell: bash
+        env:
+          BRANCH: ${{ github.event.inputs.branch || 'main' }}
         run: |
-          BRANCH="${{ github.event.inputs.branch || 'main' }}"
+          if ! git check-ref-format --branch "$BRANCH" >/dev/null 2>&1; then
+            echo "::error::Invalid source branch: $BRANCH"
+            exit 1
+          fi
           echo "Cloning branch: $BRANCH"
-          git clone --recursive --branch "$BRANCH" $PRIVATE_REPO $SOURCE_DIR
+          git clone --recursive --branch "$BRANCH" "$PRIVATE_REPO" "$SOURCE_DIR"
 
       # --- Extract Version ---
       - name: Extract version
