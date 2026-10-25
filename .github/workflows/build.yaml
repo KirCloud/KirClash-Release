@@ -130,52 +130,9 @@ jobs:
       # --- Android Signing (Only for Android) ---
       - name: Setup Android Signing
         if: env.SHOULD_RUN == 'true' && matrix.platform == 'android'
-        env:
-          ORG_ID: ${{ github.event.inputs.org_id }}
         run: |
           cd $SOURCE_DIR
           echo "${{ secrets.KEYSTORE }}" | base64 --decode > android/app/keystore.jks
-          
-          # If org_id is provided, generate a placeholder google-services.json
-          # Otherwise use the secret
-          if [ -n "$ORG_ID" ]; then
-            echo "Generating google-services.json for com.${ORG_ID}.clash"
-            cat > android/app/google-services.json << EOF
-          {
-            "project_info": {
-              "project_number": "000000000000",
-              "project_id": "placeholder"
-            },
-            "client": [
-              {
-                "client_info": {
-                  "mobilesdk_app_id": "1:000000000000:android:0000000000000000",
-                  "android_client_info": {
-                    "package_name": "com.${ORG_ID}.clash"
-                  }
-                },
-                "oauth_client": [],
-                "api_key": [{"current_key": "placeholder"}],
-                "services": {"appinvite_service": {"other_platform_oauth_client": []}}
-              },
-              {
-                "client_info": {
-                  "mobilesdk_app_id": "1:000000000000:android:0000000000000000",
-                  "android_client_info": {
-                    "package_name": "com.${ORG_ID}.clash.debug"
-                  }
-                },
-                "oauth_client": [],
-                "api_key": [{"current_key": "placeholder"}],
-                "services": {"appinvite_service": {"other_platform_oauth_client": []}}
-              }
-            ]
-          }
-          EOF
-          else
-            echo "${{ secrets.SERVICE_JSON }}" | base64 --decode > android/app/google-services.json
-          fi
-          
           echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/local.properties
           echo "storePassword=${{ secrets.STORE_PASSWORD }}" >> android/local.properties
           echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> android/local.properties
