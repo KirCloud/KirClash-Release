@@ -214,6 +214,13 @@ jobs:
         run: |
           cp $SOURCE_DIR/.github/release_template.md $SOURCE_DIR/dist/ || true
 
+      # The update dialog reads this asset to list every version a user skipped.
+      - name: Render changelog feed (Linux Only)
+        if: env.SHOULD_RUN == 'true' && matrix.platform == 'linux' && matrix.arch == 'amd64'
+        working-directory: source
+        shell: bash
+        run: dart run tool/changelog.dart render feed --out dist/changelog.json
+
       # --- Upload Artifacts ---
       - name: Upload Artifacts
         if: env.SHOULD_RUN == 'true'
